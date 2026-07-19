@@ -1,0 +1,621 @@
+#!/var/jb/usr/bin/sh
+
+set -eu
+umask 077
+
+PATH=/var/jb/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin
+export PATH
+
+PACKAGE_ROOT=${IOS_NFCF_PACKAGE_ROOT:-/var/jb}
+LIB=${IOS_NFCF_LIBRARY:-$PACKAGE_ROOT/Library/MobileSubstrate/DynamicLibraries/iOSNFCFCardEmulation.dylib}
+HELPERS=${IOS_NFCF_HELPERS:-$PACKAGE_ROOT/usr/libexec/iosnfcf}
+COMMAND_HELPER=${IOS_NFCF_COMMAND_HELPER:-$HELPERS/nfcf-command}
+OPAINJECT=${IOS_NFCF_OPAINJECT:-/var/jb/usr/bin/opainject}
+
+STATE_DIR=${IOS_NFCF_STATE_DIR:-/var/mobile/Library/Caches/org.hoshitsugi.iosnfcfcardemulation}
+OBSERVER_RESULT=$STATE_DIR/nci-read.log
+OBSERVER_READY=$STATE_DIR/nci-read.ready
+SETCE_RESULT=$STATE_DIR/setce.result
+ROUTE_RESULT=$STATE_DIR/t3t-route.result
+ROUTING_RESULT=$STATE_DIR/routing.result
+PREWARM_RESULT=$STATE_DIR/prewarm.result
+PROFILE_RESULT=$STATE_DIR/profile.result
+PROFILE_READY=$STATE_DIR/profile.ready
+PROFILE_RECORD=$STATE_DIR/profile.record
+PROFILE_MARKER=$STATE_DIR/profile.selected
+INJECT_LOG=$STATE_DIR/inject.log
+WAKE_LOG=$STATE_DIR/wake.log
+LOCK_DIR=$STATE_DIR/ctl.lock
+
+CURRENT_COMMAND=unknown
+JSON_EMITTED=0
+LOCK_HELD=0
+START_TRANSACTION=0
+PREWARM_OPENED=0
+ROUTING_DISABLED=0
+PATCH_APPLIED=0
+CE_ACTIVE=0
+
+emit_json() {
+    json_success=$1
+    json_command=$2
+    json_state=$3
+    json_routing=$4
+    json_profile=$5
+    json_code=$6
+    json_message=$7
+    json_fingerprint=${8:-}
+    printf 'NFCF_JSON:{"schemaVersion":1,"success":%s,"command":"%s","state":"%s","routing":"%s","profile":"%s","code":"%s","message":"%s","recordFingerprint":"%s"}\n' \
+        "$json_success" "$json_command" "$json_state" "$json_routing" \
+        "$json_profile" "$json_code" "$json_message" "$json_fingerprint"
+    JSON_EMITTED=1
+}
+
+ensure_state_directory() {
+    if [ -L "$STATE_DIR" ]; then
+        echo "Refusing symbolic-link state directory." >&2
+        return 1
+    fi
+    if [ ! -d "$STATE_DIR" ]; then
+        mkdir "$STATE_DIR"
+    fi
+    chmod 0700 "$STATE_DIR"
+}
+
+release_lock() {
+    if [ "$LOCK_HELD" -eq 1 ]; then
+        rm -f "$LOCK_DIR/pid"
+        rmdir "$LOCK_DIR" 2>/dev/null || true
+        LOCK_HELD=0
+    fi
+}
+
+rollback_start() {
+    [ "$START_TRANSACTION" -eq 1 ] || return 0
+    set +e
+    if [ "$CE_ACTIVE" -eq 1 ]; then
+        post_and_wait setce-stop "$SETCE_RESULT" \
+            'routing=(inactive|already-inactive)' >/dev/null 2>&1
+    fi
+    if [ "$PATCH_APPLIED" -eq 1 ]; then
+        post_and_wait t3t-restore "$ROUTE_RESULT" \
+            'state=(restored|already-original)' >/dev/null 2>&1
+    fi
+    if [ "$ROUTING_DISABLED" -eq 1 ]; then
+        post_and_wait routing-restore "$ROUTING_RESULT" \
+            'routing=(restored|already-restored)' >/dev/null 2>&1
+    fi
+    post_and_wait profile-clear "$PROFILE_RESULT" \
+        'profile=none active=0' >/dev/null 2>&1
+    if [ "$PREWARM_OPENED" -eq 1 ]; then
+        post_and_wait prewarm-close "$PREWARM_RESULT" \
+            'action=(close|already-closed)' >/dev/null 2>&1
+    fi
+    START_TRANSACTION=0
+    PREWARM_OPENED=0
+    ROUTING_DISABLED=0
+    PATCH_APPLIED=0
+    CE_ACTIVE=0
+    set -e
+}
+
+finish() {
+    finish_status=$?
+    trap - EXIT
+    if [ "$finish_status" -ne 0 ]; then
+        rollback_start
+    fi
+    release_lock
+    if [ "$finish_status" -ne 0 ] && [ "$JSON_EMITTED" -eq 0 ]; then
+        emit_json false "$CURRENT_COMMAND" failed unknown unknown \
+            operation-failed "処理を完了できませんでした" ""
+    fi
+    exit "$finish_status"
+}
+
+trap finish EXIT
+trap 'exit 130' INT TERM
+
+acquire_lock() {
+    ensure_state_directory
+    if [ -L "$LOCK_DIR" ]; then
+        echo "Refusing symbolic-link lock." >&2
+        return 1
+    fi
+    if mkdir "$LOCK_DIR" 2>/dev/null; then
+        chmod 0700 "$LOCK_DIR"
+        printf '%s\n' "$$" > "$LOCK_DIR/pid"
+        chmod 0600 "$LOCK_DIR/pid"
+        LOCK_HELD=1
+        return 0
+    fi
+    owner=
+    [ -r "$LOCK_DIR/pid" ] && IFS= read -r owner < "$LOCK_DIR/pid" || true
+    case "$owner" in
+        ''|*[!0-9]*) owner= ;;
+    esac
+    if [ -n "$owner" ] && kill -0 "$owner" 2>/dev/null; then
+        echo "Another NFC-F operation is running (pid=$owner)." >&2
+        return 1
+    fi
+    rm -f "$LOCK_DIR/pid"
+    rmdir "$LOCK_DIR" 2>/dev/null || {
+        echo "Could not clear the stale operation lock." >&2
+        return 1
+    }
+    mkdir "$LOCK_DIR"
+    chmod 0700 "$LOCK_DIR"
+    printf '%s\n' "$$" > "$LOCK_DIR/pid"
+    chmod 0600 "$LOCK_DIR/pid"
+    LOCK_HELD=1
+}
+
+usage() {
+    cat <<'EOF'
+Usage:
+  iosnfcfctl status
+  iosnfcfctl start
+  iosnfcfctl stop
+  iosnfcfctl recover
+  iosnfcfctl logs
+  iosnfcfctl profile show
+  iosnfcfctl profile apply
+  iosnfcfctl profile clear
+
+The profile producer must write a valid profile.record before activation.
+Every command prints one NFCF_JSON line for machine-readable status.
+EOF
+}
+
+find_nfcd_pid() {
+    if [ -n "${IOS_NFCF_NFCD_PID:-}" ]; then
+        printf '%s\n' "$IOS_NFCF_NFCD_PID"
+        return
+    fi
+    ps -A 2>/dev/null | while IFS=' ' read -r pid tty cpu command; do
+        if [ "$command" = "/usr/libexec/nfcd" ]; then
+            echo "$pid"
+            break
+        fi
+    done
+}
+
+wait_for_pattern() {
+    result_file=$1
+    pattern=$2
+    count=0
+    while [ "$count" -lt 300 ]; do
+        if [ -f "$result_file" ] && grep -Eq "$pattern" "$result_file"; then
+            return 0
+        fi
+        if [ -f "$result_file" ] && grep -Eq \
+            'result=(failed|refused|unavailable[^ ]*|stop-failed|no-callback-mutex|[1-9][0-9]*)' \
+            "$result_file"; then
+            cat "$result_file" >&2
+            return 1
+        fi
+        count=$((count + 1))
+        sleep 0.1
+    done
+    echo "Timed out waiting for $result_file ($pattern)" >&2
+    [ -f "$result_file" ] && cat "$result_file" >&2 || true
+    return 1
+}
+
+post_and_wait() {
+    command_name=$1
+    result_file=$2
+    pattern=$3
+    rm -f "$result_file"
+    "$COMMAND_HELPER" "$command_name" || return $?
+    wait_for_pattern "$result_file" "$pattern"
+}
+
+harness_loaded_for_pid() {
+    loaded_pid=$1
+    [ -f "$OBSERVER_READY" ] &&
+        grep -Eq "observer=installed pid=${loaded_pid}$" "$OBSERVER_READY"
+}
+
+harness_ready_for_pid() {
+    ready_pid=$1
+    harness_loaded_for_pid "$ready_pid" && [ -f "$PROFILE_READY" ] &&
+        grep -Eq "ready=1 pid=${ready_pid}$" "$PROFILE_READY"
+}
+
+inject_harness() {
+    inject_pid=$1
+    count=0
+    while [ "$count" -lt 20 ]; do
+        harness_ready_for_pid "$inject_pid" && return 0
+        count=$((count + 1))
+        sleep 0.05
+    done
+    if [ ! -x "$OPAINJECT" ] || [ ! -f "$LIB" ]; then
+        echo "Missing opainject or iOSNFCFCardEmulation.dylib." >&2
+        return 1
+    fi
+    rm -f "$OBSERVER_RESULT" "$OBSERVER_READY" "$PROFILE_READY" \
+        "$STATE_DIR/stack.log" "$INJECT_LOG"
+    "$OPAINJECT" "$inject_pid" "$LIB" >"$INJECT_LOG" 2>&1 &
+    injector_pid=$!
+    if wait_for_pattern "$OBSERVER_READY" \
+            "observer=installed pid=${inject_pid}$" &&
+       wait_for_pattern "$PROFILE_READY" "ready=1 pid=${inject_pid}$"; then
+        kill "$injector_pid" 2>/dev/null || true
+        wait "$injector_pid" 2>/dev/null || true
+        chmod 0600 "$INJECT_LOG" 2>/dev/null || true
+        return 0
+    fi
+    kill "$injector_pid" 2>/dev/null || true
+    wait "$injector_pid" 2>/dev/null || true
+    cat "$INJECT_LOG" >&2 2>/dev/null || true
+    return 1
+}
+
+record_fingerprint() {
+    "$COMMAND_HELPER" fingerprint-profile
+}
+
+write_profile_marker() {
+    marker_value=$1
+    marker_tmp=$(mktemp "$STATE_DIR/profile.selected.XXXXXX")
+    chmod 0600 "$marker_tmp"
+    printf '%s\n' "$marker_value" > "$marker_tmp"
+    mv -f "$marker_tmp" "$PROFILE_MARKER"
+}
+
+clear_profile_files() {
+    rm -f "$PROFILE_RECORD" "$PROFILE_MARKER"
+}
+
+load_profile_into_backend() {
+    "$COMMAND_HELPER" validate-profile
+    post_and_wait profile-apply "$PROFILE_RESULT" \
+        'result=0 profile=loaded active=1 '
+}
+
+routing_is_active() {
+    active_pid=$(find_nfcd_pid)
+    if [ -z "$active_pid" ] || ! harness_loaded_for_pid "$active_pid"; then
+        return 1
+    fi
+    post_and_wait setce-status "$SETCE_RESULT" \
+        "routing=(active|inactive).*pid=${active_pid}$" >/dev/null
+    grep -Eq 'routing=active' "$SETCE_RESULT"
+}
+
+show_status() {
+    status_pid=$(find_nfcd_pid)
+    if [ -z "$status_pid" ]; then
+        echo "nfcd=not-running harness=not-loaded routing=inactive profile=none"
+        emit_json true status unavailable inactive none ok \
+            "nfcdが起動していません" ""
+        return 0
+    fi
+    if ! harness_loaded_for_pid "$status_pid"; then
+        echo "nfcd=$status_pid harness=not-loaded routing=inactive profile=none"
+        emit_json true status stopped inactive none ok \
+            "バックエンドは読み込まれていません" ""
+        return 0
+    fi
+
+    post_and_wait setce-status "$SETCE_RESULT" \
+        "routing=(active|inactive).*pid=${status_pid}$"
+    post_and_wait profile-status "$PROFILE_RESULT" \
+        "profile=(loaded|none) active=[01].*pid=${status_pid}$"
+    routing=inactive
+    profile=none
+    state=stopped
+    grep -Eq 'routing=active' "$SETCE_RESULT" && {
+        routing=active
+        state=active
+    }
+    grep -Eq 'profile=loaded active=1' "$PROFILE_RESULT" &&
+        profile=loaded
+    fingerprint=
+    [ -r "$PROFILE_MARKER" ] && IFS= read -r fingerprint < "$PROFILE_MARKER" || true
+    echo "nfcd=$status_pid harness=loaded routing=$routing profile=$profile"
+    cat "$SETCE_RESULT" "$PROFILE_RESULT"
+    emit_json true status "$state" "$routing" "$profile" ok \
+        "状態を確認しました" "$fingerprint"
+}
+
+recover_emulation() {
+    recover_pid=$(find_nfcd_pid)
+    if [ -z "$recover_pid" ] || ! harness_loaded_for_pid "$recover_pid"; then
+        echo "NFC-F backend is not loaded." >&2
+        emit_json false recover unavailable inactive none backend-not-loaded \
+            "バックエンドが読み込まれていません" ""
+        return 1
+    fi
+    post_and_wait setce-recover "$SETCE_RESULT" \
+        "health=(recovered|inactive).*pid=${recover_pid}$"
+    cat "$SETCE_RESULT"
+    routing=inactive
+    state=stopped
+    grep -Eq 'routing=active' "$SETCE_RESULT" && {
+        routing=active
+        state=active
+    }
+    profile=none
+    [ -r "$PROFILE_MARKER" ] && profile=loaded
+    emit_json true recover "$state" "$routing" "$profile" ok \
+        "NFC-Fの状態を更新しました" ""
+}
+
+configure_route() {
+    route_pid=$(find_nfcd_pid)
+    post_and_wait prewarm-open "$PREWARM_RESULT" \
+        "action=(open|already-open).*pid=${route_pid}$" || return $?
+    grep -q 'error=none' "$PREWARM_RESULT" || return $?
+    PREWARM_OPENED=1
+
+    post_and_wait routing-off "$ROUTING_RESULT" \
+        "routing=(off|already-off).*pid=${route_pid}$" || return $?
+    ROUTING_DISABLED=1
+
+    post_and_wait t3t-patch "$ROUTE_RESULT" \
+        "state=(patched|already-patched).*pid=${route_pid}$" || return $?
+    PATCH_APPLIED=1
+
+    post_and_wait setce-start "$SETCE_RESULT" \
+        "(routing=(active|already-active)|hardware-profile-change-requires-nfcd-restart).*pid=${route_pid}$" || return $?
+    if grep -q 'hardware-profile-change-requires-nfcd-restart' "$SETCE_RESULT"; then
+        return 10
+    fi
+    grep -Eq 'routing=(active|already-active)' "$SETCE_RESULT" || return $?
+    CE_ACTIVE=1
+}
+
+restart_nfcd() {
+    old_pid=$(find_nfcd_pid)
+    [ -n "$old_pid" ] || return 1
+    rm -f "$SETCE_RESULT" "$PROFILE_RESULT" "$OBSERVER_RESULT" \
+        "$OBSERVER_READY" "$PROFILE_READY"
+    kill "$old_pid"
+    "$HELPERS/nfcd-xpc-wake" >"$WAKE_LOG" 2>&1 &
+    chmod 0600 "$WAKE_LOG" 2>/dev/null || true
+    count=0
+    new_pid=
+    while [ "$count" -lt 200 ]; do
+        new_pid=$(find_nfcd_pid)
+        if [ -n "$new_pid" ] && [ "$new_pid" != "$old_pid" ]; then
+            break
+        fi
+        count=$((count + 1))
+        sleep 0.1
+    done
+    if [ -z "$new_pid" ] || [ "$new_pid" = "$old_pid" ]; then
+        echo "Timed out restarting nfcd." >&2
+        return 1
+    fi
+    inject_harness "$new_pid"
+    load_profile_into_backend
+}
+
+start_emulation() {
+    [ -r "$PROFILE_RECORD" ] && [ -r "$PROFILE_MARKER" ] || {
+        echo "Apply an NFC-F profile before starting." >&2
+        return 1
+    }
+    "$COMMAND_HELPER" validate-profile
+    requested=$(record_fingerprint)
+    selected=
+    IFS= read -r selected < "$PROFILE_MARKER" || true
+    if [ -z "$selected" ] || [ "$requested" != "$selected" ]; then
+        echo "The profile record changed; apply it again before starting." >&2
+        return 1
+    fi
+    start_pid=$(find_nfcd_pid)
+    [ -n "$start_pid" ] || {
+        echo "nfcd is not running; wake NFC once and retry." >&2
+        return 1
+    }
+    inject_harness "$start_pid"
+    load_profile_into_backend
+
+    START_TRANSACTION=1
+    if configure_route; then
+        :
+    else
+        configure_status=$?
+        if [ "$configure_status" -ne 10 ]; then
+            return "$configure_status"
+        fi
+        rollback_start
+        restart_nfcd
+        START_TRANSACTION=1
+        configure_route
+    fi
+    START_TRANSACTION=0
+    echo "NFC-F card emulation is active."
+    emit_json true start active active loaded ok \
+        "NFC-Fエミュレーションを開始しました" "$requested"
+}
+
+stop_emulation() {
+    stop_pid=$(find_nfcd_pid)
+    if [ -z "$stop_pid" ] || ! harness_loaded_for_pid "$stop_pid"; then
+        clear_profile_files
+        echo "NFC-F backend is not loaded in the current nfcd."
+        emit_json true stop stopped inactive none ok \
+            "NFC-Fエミュレーションを停止しました" ""
+        return 0
+    fi
+
+    cleanup_failed=0
+    post_and_wait setce-stop "$SETCE_RESULT" \
+        'routing=(inactive|already-inactive)' || cleanup_failed=1
+    post_and_wait t3t-restore "$ROUTE_RESULT" \
+        'state=(restored|already-original)' || cleanup_failed=1
+    post_and_wait routing-restore "$ROUTING_RESULT" \
+        'routing=(restored|already-restored)' || cleanup_failed=1
+    post_and_wait profile-clear "$PROFILE_RESULT" \
+        'profile=none active=0' || cleanup_failed=1
+    post_and_wait prewarm-close "$PREWARM_RESULT" \
+        'action=(close|already-closed)' || cleanup_failed=1
+    clear_profile_files
+    if [ "$cleanup_failed" -ne 0 ]; then
+        emit_json false stop failed unknown none cleanup-failed \
+            "一部の復旧処理に失敗しました。端末を再起動してください" ""
+        return 1
+    fi
+    echo "NFC-F emulation stopped and original routing was restored."
+    emit_json true stop stopped inactive none ok \
+        "NFC-Fエミュレーションを停止しました" ""
+}
+
+profile_show() {
+    profile_pid=$(find_nfcd_pid)
+    if [ -n "$profile_pid" ] && harness_loaded_for_pid "$profile_pid"; then
+        post_and_wait profile-status "$PROFILE_RESULT" \
+            "profile=(loaded|none) active=[01].*pid=${profile_pid}$"
+        cat "$PROFILE_RESULT"
+        profile=none
+        grep -Eq 'profile=loaded active=1' "$PROFILE_RESULT" &&
+            profile=loaded
+    else
+        profile=none
+        echo "profile=none active=0 backend=not-loaded"
+    fi
+    routing=inactive
+    state=stopped
+    if routing_is_active; then
+        routing=active
+        state=active
+    fi
+    fingerprint=
+    [ -r "$PROFILE_MARKER" ] && IFS= read -r fingerprint < "$PROFILE_MARKER" || true
+    emit_json true profile-show "$state" "$routing" "$profile" ok \
+        "NFC-Fプロファイルを確認しました" "$fingerprint"
+}
+
+profile_apply() {
+    [ -r "$PROFILE_RECORD" ] || {
+        echo "No protected NFC-F profile record is available." >&2
+        return 1
+    }
+    "$COMMAND_HELPER" validate-profile
+    requested=$(record_fingerprint)
+    if routing_is_active; then
+        active=
+        [ -r "$PROFILE_MARKER" ] && IFS= read -r active < "$PROFILE_MARKER" || true
+        if [ "$requested" = "$active" ]; then
+            recover_emulation >/dev/null
+            emit_json true profile-apply active active loaded ok \
+                "このNFC-Fプロファイルはすでに有効です" "$requested"
+            return 0
+        fi
+        echo "Stop NFC-F before applying a different profile." >&2
+        return 1
+    fi
+    write_profile_marker "$requested"
+    profile_pid=$(find_nfcd_pid)
+    if [ -n "$profile_pid" ] && harness_loaded_for_pid "$profile_pid"; then
+        if ! load_profile_into_backend; then
+            rm -f "$PROFILE_MARKER"
+            return 1
+        fi
+        echo "Applied NFC-F profile."
+    else
+        echo "Validated NFC-F profile; it will apply on start."
+    fi
+    emit_json true profile-apply ready inactive loaded ok \
+        "NFC-Fプロファイルを選択しました" "$requested"
+}
+
+profile_clear() {
+    if routing_is_active; then
+        echo "Stop NFC-F before clearing the profile." >&2
+        return 1
+    fi
+    clear_profile_files
+    clear_pid=$(find_nfcd_pid)
+    if [ -n "$clear_pid" ] && harness_loaded_for_pid "$clear_pid"; then
+        post_and_wait profile-clear "$PROFILE_RESULT" \
+            'profile=none active=0'
+    fi
+    echo "Cleared the temporary NFC-F profile."
+    emit_json true profile-clear stopped inactive none ok \
+        "一時NFC-Fプロファイルを消去しました" ""
+}
+
+show_logs() {
+    for log_file in \
+        "$OBSERVER_RESULT.previous" "$OBSERVER_RESULT" \
+        "$STATE_DIR/nci.log.previous" "$STATE_DIR/nci.log" \
+        "$STATE_DIR/stack.log.previous" "$STATE_DIR/stack.log"; do
+        if [ -r "$log_file" ]; then
+            echo "--- $log_file ---"
+            tail -n 40 "$log_file"
+        fi
+    done
+    emit_json true logs complete unknown unknown ok \
+        "診断ログを取得しました" ""
+}
+
+ensure_state_directory
+
+case "${1:-}" in
+    status)
+        CURRENT_COMMAND=status
+        [ "$#" -eq 1 ] || { usage >&2; exit 2; }
+        acquire_lock
+        show_status
+        ;;
+    recover)
+        CURRENT_COMMAND=recover
+        [ "$#" -eq 1 ] || { usage >&2; exit 2; }
+        acquire_lock
+        recover_emulation
+        ;;
+    start)
+        CURRENT_COMMAND=start
+        [ "$#" -eq 1 ] || { usage >&2; exit 2; }
+        acquire_lock
+        start_emulation
+        ;;
+    stop)
+        CURRENT_COMMAND=stop
+        [ "$#" -eq 1 ] || { usage >&2; exit 2; }
+        acquire_lock
+        stop_emulation
+        ;;
+    logs)
+        CURRENT_COMMAND=logs
+        [ "$#" -eq 1 ] || { usage >&2; exit 2; }
+        acquire_lock
+        show_logs
+        ;;
+    profile)
+        case "${2:-}" in
+            show)
+                CURRENT_COMMAND=profile-show
+                [ "$#" -eq 2 ] || { usage >&2; exit 2; }
+                acquire_lock
+                profile_show
+                ;;
+            apply)
+                CURRENT_COMMAND=profile-apply
+                [ "$#" -eq 2 ] || { usage >&2; exit 2; }
+                acquire_lock
+                profile_apply
+                ;;
+            clear)
+                CURRENT_COMMAND=profile-clear
+                [ "$#" -eq 2 ] || { usage >&2; exit 2; }
+                acquire_lock
+                profile_clear
+                ;;
+            *)
+                usage >&2
+                exit 2
+                ;;
+        esac
+        ;;
+    *)
+        usage >&2
+        exit 2
+        ;;
+esac

@@ -1,0 +1,11 @@
+#!/var/jb/usr/bin/sh
+
+umask 077
+
+case "${1:-}" in
+    remove|purge)
+        rm -rf /var/mobile/Library/Caches/org.hoshitsugi.iosnfcfcardemulation
+        ;;
+esac
+
+exit 0

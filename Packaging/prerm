@@ -1,0 +1,29 @@
+#!/var/jb/usr/bin/sh
+
+umask 077
+
+case "${1:-}" in
+    remove|deconfigure)
+        state=/var/mobile/Library/Caches/org.hoshitsugi.iosnfcfcardemulation
+        if [ ! -e "$state" ]; then
+            install -d -o 501 -g 501 -m 0700 "$state"
+        fi
+        if [ -d "$state" ] && [ ! -L "$state" ]; then
+            /var/jb/usr/bin/iosnfcfctl stop >"$state/remove.log" 2>&1 || true
+            wake_log=$state/remove-wake.log
+        else
+            /var/jb/usr/bin/iosnfcfctl stop >/dev/null 2>&1 || true
+            wake_log=/dev/null
+        fi
+        ps -A 2>/dev/null | while IFS=' ' read -r pid tty cpu command; do
+            if [ "$command" = "/usr/libexec/nfcd" ]; then
+                kill "$pid" 2>/dev/null || true
+                break
+            fi
+        done
+        /var/jb/usr/libexec/iosnfcf/nfcd-xpc-wake \
+            >"$wake_log" 2>&1 &
+        ;;
+esac
+
+exit 0

@@ -1,0 +1,24 @@
+#!/var/jb/usr/bin/sh
+
+umask 077
+
+case "${1:-}" in
+    configure)
+        state=/var/mobile/Library/Caches/org.hoshitsugi.iosnfcfcardemulation
+        if [ -L "$state" ] || { [ -e "$state" ] && [ ! -d "$state" ]; }; then
+            echo "Refusing unsafe backend state path." >&2
+            exit 1
+        fi
+        install -d -o 501 -g 501 -m 0700 "$state"
+        ps -A 2>/dev/null | while IFS=' ' read -r pid tty cpu command; do
+            if [ "$command" = "/usr/libexec/nfcd" ]; then
+                kill "$pid" 2>/dev/null || true
+                break
+            fi
+        done
+        /var/jb/usr/libexec/iosnfcf/nfcd-xpc-wake \
+            >"$state/install-wake.log" 2>&1 &
+        ;;
+esac
+
+exit 0

@@ -1,0 +1,11 @@
+Package: org.hoshitsugi.iosnfcfcardemulation
+Name: iOS NFC-F Card Emulation
+Version: 0.1.0
+Architecture: iphoneos-arm64
+Description: Rootless jailbreak backend for NFC-F Type 3 Tag card emulation.
+Maintainer: Hoshitsugi contributors
+Author: Hoshitsugi contributors
+Section: Tweaks
+Homepage: https://github.com/hoshitsugi/iOSNFCFCardEmulation
+Icon: file:///var/jb/usr/share/org.hoshitsugi.iosnfcfcardemulation/PackageIcon.png
+Depends: firmware (>= 16.0), ellekit (>= 1.1.3)

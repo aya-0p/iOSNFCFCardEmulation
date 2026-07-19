@@ -1,0 +1,37 @@
+# Build output
+build/
+dist/
+packages/
+.helpers/
+.stage/
+*.deb
+*.dylib
+
+# Apple and signing material (never commit these)
+*.sdk/
+sdks/
+toolchain/
+theos/
+*.mobileprovision
+*.p12
+*.cer
+*.key
+*.pem
+
+# Card data and device access
+*.record
+*.backup.json
+*diagnostics*.txt
+.device-keys/
+id_*
+known_hosts
+
+# Local tooling
+.DS_Store
+.idea/
+.vscode/
+.env
+.env.*
+*.log
+*.swp
+*~
