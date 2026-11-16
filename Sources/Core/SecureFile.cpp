@@ -5,6 +5,7 @@
 #include <limits.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -21,6 +22,15 @@ static bool WriteAll(int fd, const void *bytes, size_t length) {
         length -= static_cast<size_t>(count);
     }
     return true;
+}
+
+static int OpenReadableFile(const char *path) {
+    int fd = open(path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC);
+    if (fd >= 0 || errno != ENOENT) return fd;
+
+    char resolved[PATH_MAX] = {};
+    if (realpath(path, resolved) == nullptr) return -1;
+    return open(resolved, O_RDONLY | O_CLOEXEC);
 }
 
 bool EnsurePrivateDirectory(const char *path) {
@@ -64,7 +74,7 @@ bool WriteSecureTextFile(const char *path, const char *text) {
 bool ReadSecureFileExact(const char *path, void *bytes, size_t length,
                          uid_t expected_owner) {
     if (path == nullptr || bytes == nullptr || length == 0) return false;
-    int fd = open(path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC);
+    int fd = OpenReadableFile(path);
     if (fd < 0) return false;
     struct stat info = {};
     bool valid = fstat(fd, &info) == 0 && S_ISREG(info.st_mode) &&

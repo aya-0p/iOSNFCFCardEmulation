@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <limits.h>
 #include <unistd.h>
 
 #include "CommandProtocol.hpp"
@@ -25,10 +26,10 @@ int main(int argc, char **argv) {
         nfcf::Profile profile = {};
         int profile_fd = open(nfcf_backend::kProfileRecordPath, O_RDONLY);
         if (profile_fd < 0 && errno == ENOENT) {
-            profile_fd = open(
-                "/private/var/mobile/Library/Caches/"
-                "org.hoshitsugi.iosnfcfcardemulation/profile.record",
-                O_RDONLY);
+            char resolved[PATH_MAX] = {};
+            if (realpath(nfcf_backend::kProfileRecordPath, resolved) !=
+                nullptr)
+                profile_fd = open(resolved, O_RDONLY);
         }
         if (profile_fd < 0) {
             fprintf(stderr,
