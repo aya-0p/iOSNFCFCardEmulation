@@ -28,13 +28,21 @@ static bool WriteAll(int fd, const void *bytes, size_t length) {
 static int OpenReadableFile(const char *path) {
     int fd = open(path, O_RDONLY);
     if (fd >= 0 || errno != ENOENT) return fd;
+    int open_errno = errno;
     FILE *stream = fopen(path, "rb");
     if (stream != nullptr) {
         int stream_fd = dup(fileno(stream));
         int close_result = fclose(stream);
         if (stream_fd >= 0 && close_result == 0) return stream_fd;
         if (stream_fd >= 0) close(stream_fd);
+    } else {
+        fprintf(stderr, "ReadSecureFileExact fopen failed: %s errno=%d (%s)\n",
+                path, errno, strerror(errno));
     }
+    if (access(path, R_OK) != 0)
+        fprintf(stderr, "ReadSecureFileExact access failed: %s errno=%d (%s)\n",
+                path, errno, strerror(errno));
+    errno = open_errno;
 
     if (strncmp(path, "/var/mobile/", 12) == 0) {
         const char *roots[] = {
