@@ -25,16 +25,29 @@ int main(int argc, char **argv) {
         nfcf::ProfileRecord record = {};
         nfcf::Profile profile = {};
         int profile_fd = open(nfcf_backend::kProfileRecordPath, O_RDONLY);
+        char resolved_profile_path[PATH_MAX] = {};
         if (profile_fd < 0 && errno == ENOENT) {
-            char resolved[PATH_MAX] = {};
-            if (realpath(nfcf_backend::kProfileRecordPath, resolved) !=
-                nullptr)
-                profile_fd = open(resolved, O_RDONLY);
+            if (realpath(nfcf_backend::kProfileRecordPath,
+                         resolved_profile_path) != nullptr) {
+                profile_fd = open(resolved_profile_path, O_RDONLY);
+                if (profile_fd < 0 && errno == ENOENT &&
+                    strncmp(resolved_profile_path, "/rootfs/", 8) != 0) {
+                    char rootfs_path[PATH_MAX] = {};
+                    int count = snprintf(rootfs_path, sizeof(rootfs_path),
+                                         "/rootfs%s", resolved_profile_path);
+                    if (count > 0 &&
+                        static_cast<size_t>(count) < sizeof(rootfs_path))
+                        profile_fd = open(rootfs_path, O_RDONLY);
+                }
+            }
         }
         if (profile_fd < 0) {
             fprintf(stderr,
-                    "Profile open failed: path=%s errno=%d (%s).\n",
-                    nfcf_backend::kProfileRecordPath, errno, strerror(errno));
+                    "Profile open failed: path=%s resolved=%s errno=%d (%s).\n",
+                    nfcf_backend::kProfileRecordPath,
+                    resolved_profile_path[0] != '\0' ? resolved_profile_path
+                                                     : "(unresolved)",
+                    errno, strerror(errno));
             return 1;
         }
         struct stat profile_info = {};

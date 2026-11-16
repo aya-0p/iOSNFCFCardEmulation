@@ -29,8 +29,18 @@ static int OpenReadableFile(const char *path) {
     if (fd >= 0 || errno != ENOENT) return fd;
 
     char resolved[PATH_MAX] = {};
-    if (realpath(path, resolved) == nullptr) return -1;
-    return open(resolved, O_RDONLY | O_CLOEXEC);
+    if (realpath(path, resolved) != nullptr) {
+        fd = open(resolved, O_RDONLY | O_CLOEXEC);
+        if (fd >= 0 || errno != ENOENT) return fd;
+        if (strncmp(resolved, "/rootfs/", 8) != 0) {
+            char rootfs_path[PATH_MAX] = {};
+            int count = snprintf(rootfs_path, sizeof(rootfs_path),
+                                 "/rootfs%s", resolved);
+            if (count > 0 && static_cast<size_t>(count) < sizeof(rootfs_path))
+                return open(rootfs_path, O_RDONLY | O_CLOEXEC);
+        }
+    }
+    return -1;
 }
 
 bool EnsurePrivateDirectory(const char *path) {
