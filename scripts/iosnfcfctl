@@ -12,7 +12,7 @@ HELPERS=${IOS_NFCF_HELPERS:-$PACKAGE_ROOT/usr/libexec/iosnfcf}
 COMMAND_HELPER=${IOS_NFCF_COMMAND_HELPER:-$HELPERS/nfcf-command}
 OPAINJECT=${IOS_NFCF_OPAINJECT:-/var/jb/usr/bin/opainject}
 
-STATE_DIR=${IOS_NFCF_STATE_DIR:-/var/jb/Library/Caches/org.hoshitsugi.iosnfcfcardemulation}
+STATE_DIR=${IOS_NFCF_STATE_DIR:-/var/jb/usr/libexec/iosnfcf/state}
 if [ -n "${IOS_NFCF_SOURCE_STATE_DIR:-}" ]; then
     SOURCE_STATE_DIR=$IOS_NFCF_SOURCE_STATE_DIR
 elif [ -n "${IOS_NFCF_STATE_DIR:-}" ]; then

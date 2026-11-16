@@ -41,7 +41,7 @@ UIやカード読み取り機能はありません。利用側のアプリがプ
 でバックエンドが共有する次の場所へアトミックに同期します。
 
 ```text
-/var/jb/Library/Caches/org.hoshitsugi.iosnfcfcardemulation/profile.record
+/var/jb/usr/libexec/iosnfcf/state/profile.record
 ```
 
 ヘルパーと注入された`nfcd`コードは同期済みのコピーだけを読み込みます。

@@ -4,7 +4,7 @@ umask 077
 
 case "${1:-}" in
     remove|deconfigure)
-        state=/var/jb/Library/Caches/org.hoshitsugi.iosnfcfcardemulation
+        state=/var/jb/usr/libexec/iosnfcf/state
         if [ ! -e "$state" ]; then
             install -d -o 501 -g 501 -m 0700 "$state"
         fi

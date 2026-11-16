@@ -4,7 +4,7 @@ umask 077
 
 case "${1:-}" in
     configure)
-        state=/var/jb/Library/Caches/org.hoshitsugi.iosnfcfcardemulation
+        state=/var/jb/usr/libexec/iosnfcf/state
         input=/var/mobile/Library/Caches/org.hoshitsugi.iosnfcfcardemulation
         if [ -L "$state" ] || { [ -e "$state" ] && [ ! -d "$state" ]; }; then
             echo "Refusing unsafe backend state path." >&2
