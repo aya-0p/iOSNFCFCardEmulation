@@ -111,25 +111,48 @@ bool ReadSecureFileExact(const char *path, void *bytes, size_t length,
                          uid_t expected_owner) {
     if (path == nullptr || bytes == nullptr || length == 0) return false;
     int fd = OpenReadableFile(path);
-    if (fd < 0) return false;
+    if (fd < 0) {
+        fprintf(stderr, "ReadSecureFileExact open failed: %s errno=%d (%s)\n",
+                path, errno, strerror(errno));
+        return false;
+    }
     struct stat info = {};
-    bool valid = fstat(fd, &info) == 0 && S_ISREG(info.st_mode) &&
-                 info.st_uid == expected_owner &&
-                 (info.st_mode & 0777) == 0600 &&
-                 info.st_size == static_cast<off_t>(length);
+    bool metadata_valid =
+        fstat(fd, &info) == 0 && S_ISREG(info.st_mode) &&
+        info.st_uid == expected_owner && (info.st_mode & 0777) == 0600 &&
+        info.st_size == static_cast<off_t>(length);
+    if (!metadata_valid) {
+        fprintf(stderr,
+                "ReadSecureFileExact metadata invalid: path=%s uid=%u "
+                "expected_uid=%u mode=%04o size=%lld expected_size=%zu\n",
+                path, static_cast<unsigned>(info.st_uid),
+                static_cast<unsigned>(expected_owner),
+                static_cast<unsigned>(info.st_mode & 0777),
+                static_cast<long long>(info.st_size), length);
+        close(fd);
+        return false;
+    }
     size_t offset = 0;
-    while (valid && offset < length) {
+    while (offset < length) {
         ssize_t count = read(fd, static_cast<uint8_t *>(bytes) + offset,
                              length - offset);
         if (count < 0 && errno == EINTR) continue;
         if (count <= 0) {
-            valid = false;
-            break;
+            fprintf(stderr,
+                    "ReadSecureFileExact read failed: path=%s bytes=%zu "
+                    "expected=%zu errno=%d (%s)\n",
+                    path, offset, length, errno, strerror(errno));
+            close(fd);
+            return false;
         }
         offset += static_cast<size_t>(count);
     }
-    if (close(fd) != 0) valid = false;
-    return valid && offset == length;
+    if (close(fd) != 0) {
+        fprintf(stderr, "ReadSecureFileExact close failed: path=%s errno=%d\n",
+                path, errno);
+        return false;
+    }
+    return true;
 }
 
 }  // namespace nfcf_backend
