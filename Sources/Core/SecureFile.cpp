@@ -22,9 +22,11 @@ static const char *ResolvePath(const char *path, char (&buffer)[PATH_MAX]) {
 #if NFCF_HAS_LIBROOT
     constexpr const char kJbrootPrefix[] = "/var/jb/";
     if (strncmp(path, kJbrootPrefix, sizeof(kJbrootPrefix) - 1) == 0) {
-        const char *rootful_path = path + sizeof(kJbrootPrefix) - 1;
-        buffer[0] = '/';
-        if (libroot_dyn_jbrootpath(rootful_path, buffer) != nullptr)
+        char rootful_path[PATH_MAX] = {};
+        int count = snprintf(rootful_path, sizeof(rootful_path), "/%s",
+                             path + sizeof(kJbrootPrefix) - 1);
+        if (count > 0 && static_cast<size_t>(count) < sizeof(rootful_path) &&
+            libroot_dyn_jbrootpath(rootful_path, buffer) != nullptr)
             return buffer;
     }
 #else
