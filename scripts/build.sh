@@ -7,7 +7,7 @@ THEOS=${THEOS:-"$HOME/theos"}
 TARGET=${TARGET:-"arm64e-apple-ios17.6.1"}
 
 if [[ "$(uname -s)" == "Darwin" ]]; then
-    TOOLCHAIN=${TOOLCHAIN:-"$THEOS/toolchain/darwin/iphone/bin"}
+    TOOLCHAIN=${TOOLCHAIN:-"$(dirname "$(xcrun -f clang++)")"}
     LDID=${LDID:-ldid}
     SDK=${SDK:-"$(find -L "$THEOS/sdks" -maxdepth 1 -type d -name 'iPhoneOS*.sdk' | sort | tail -n 1)"}
     SHA256SUM=${SHA256SUM:-shasum}
