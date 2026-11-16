@@ -23,8 +23,13 @@ int main(int argc, char **argv) {
         uint8_t encoded[nfcf::kProfileRecordEncodedSize] = {};
         nfcf::ProfileRecord record = {};
         nfcf::Profile profile = {};
-        int profile_fd = open(nfcf_backend::kProfileRecordPath,
-                              O_RDONLY | O_CLOEXEC);
+        int profile_fd = open(nfcf_backend::kProfileRecordPath, O_RDONLY);
+        if (profile_fd < 0 && errno == ENOENT) {
+            profile_fd = open(
+                "/private/var/mobile/Library/Caches/"
+                "org.hoshitsugi.iosnfcfcardemulation/profile.record",
+                O_RDONLY);
+        }
         if (profile_fd < 0) {
             fprintf(stderr,
                     "Profile open failed: path=%s errno=%d (%s).\n",
