@@ -30,21 +30,23 @@ static int OpenReadableFile(const char *path) {
     if (fd >= 0 || errno != ENOENT) return fd;
 
     if (strncmp(path, "/var/mobile/", 12) == 0) {
-        DIR *directory = opendir(
-            "/rootfs/private/var/mobile/Containers/Shared/AppGroup");
-        if (directory != nullptr) {
+        const char *roots[] = {
+            "/rootfs/private/var/mobile/Containers/Shared/AppGroup",
+            "/private/var/mobile/Containers/Shared/AppGroup",
+        };
+        for (const char *root : roots) {
+            DIR *directory = opendir(root);
+            if (directory == nullptr) continue;
             struct dirent *entry = nullptr;
             while ((entry = readdir(directory)) != nullptr) {
                 if (strncmp(entry->d_name, ".jbroot-", 8) != 0) continue;
                 char rootless_path[PATH_MAX] = {};
-                int count = snprintf(
-                    rootless_path, sizeof(rootless_path),
-                    "/rootfs/private/var/mobile/Containers/Shared/AppGroup/%s%s",
-                    entry->d_name, path);
+                int count = snprintf(rootless_path, sizeof(rootless_path),
+                                     "%s/%s%s", root, entry->d_name, path);
                 if (count > 0 &&
                     static_cast<size_t>(count) < sizeof(rootless_path)) {
-                    fd = open(rootless_path, O_RDONLY | O_CLOEXEC);
-                    if (fd >= 0 || errno != ENOENT) {
+                    fd = open(rootless_path, O_RDONLY);
+                    if (fd >= 0) {
                         closedir(directory);
                         return fd;
                     }
