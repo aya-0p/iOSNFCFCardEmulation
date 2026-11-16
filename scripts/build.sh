@@ -4,18 +4,30 @@ set -euo pipefail
 
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 THEOS=${THEOS:-"$HOME/theos"}
-TOOLCHAIN=${TOOLCHAIN:-"$THEOS/toolchain/linux/iphone/bin"}
-SDK=${SDK:-"$THEOS/sdks/iPhoneOS16.5.sdk"}
+TARGET=${TARGET:-"arm64e-apple-ios17.6.1"}
+
+if [[ "$(uname -s)" == "Darwin" ]]; then
+    TOOLCHAIN=${TOOLCHAIN:-"$THEOS/toolchain/darwin/iphone/bin"}
+    LDID=${LDID:-ldid}
+    SHA256SUM=${SHA256SUM:-shasum}
+    SHA256_ARGS=(-a 256)
+else
+    TOOLCHAIN=${TOOLCHAIN:-"$THEOS/toolchain/linux/iphone/bin"}
+    LDID=${LDID:-"$THEOS/toolchain/linux/iphone/bin/ldid"}
+    SHA256SUM=${SHA256SUM:-sha256sum}
+    SHA256_ARGS=()
+fi
+
+SDK=${SDK:-"$THEOS/sdks/iPhoneOS17.5.sdk"}
+CLANG=${CLANG:-"$TOOLCHAIN/clang++"}
+CLANG_C=${CLANG_C:-"$TOOLCHAIN/clang"}
 
 if [[ ! -d "$SDK" ]]; then
     echo "Set SDK to a legally obtained iPhoneOS SDK directory." >&2
     exit 1
 fi
 
-CLANG=${CLANG:-"$TOOLCHAIN/clang++"}
-CLANG_C=${CLANG_C:-"$TOOLCHAIN/clang"}
-LDID=${LDID:-"$TOOLCHAIN/ldid"}
-for command in "$CLANG" "$CLANG_C" "$LDID" dpkg-deb install sha256sum; do
+for command in "$CLANG" "$CLANG_C" "$LDID" dpkg-deb install "$SHA256SUM"; do
     if ! command -v "$command" >/dev/null 2>&1; then
         echo "Required command not found: $command" >&2
         exit 1
@@ -40,7 +52,7 @@ OUTPUT="$DIST/${PACKAGE}_${VERSION}_iphoneos-arm64.deb"
 mkdir -p "$HELPER_STAGE" "$DIST"
 
 "$CLANG" -std=c++17 -fblocks -O2 -Wall -Wextra -Werror -dynamiclib \
-    -target arm64-apple-ios16.0 -isysroot "$SDK" \
+    -target "$TARGET" -isysroot "$SDK" \
     -F"$SDK/System/Library/Frameworks" \
     -I"$ROOT/Sources" \
     -I"$ROOT/Sources/Core" \
@@ -67,14 +79,14 @@ mkdir -p "$HELPER_STAGE" "$DIST"
 build_cpp_helper() {
     local output_name=$1
     shift
-    "$CLANG" -std=c++17 -O2 -Wall -Wextra -Werror -target arm64-apple-ios16.0 \
+    "$CLANG" -std=c++17 -O2 -Wall -Wextra -Werror -target "$TARGET" \
         -isysroot "$SDK" -I"$ROOT/Sources" -I"$ROOT/Sources/Core" \
         -I"$ROOT/Sources/IPC" -Wl,-no_auth_data "$@" \
         -o "$HELPER_STAGE/$output_name"
     "$LDID" -S "$HELPER_STAGE/$output_name"
 }
 
-"$CLANG_C" -fblocks -O2 -Wall -Wextra -Werror -target arm64-apple-ios16.0 \
+"$CLANG_C" -fblocks -O2 -Wall -Wextra -Werror -target "$TARGET" \
     -isysroot "$SDK" -Wl,-no_auth_data \
     "$ROOT/Helpers/nfcd_xpc_wake.c" -framework Foundation \
     -o "$HELPER_STAGE/nfcd-xpc-wake"
@@ -110,4 +122,4 @@ install -m 0644 "$ROOT/LICENSE" \
     "$STAGE/var/jb/usr/share/doc/$PACKAGE/LICENSE"
 
 dpkg-deb --build --root-owner-group "$STAGE" "$OUTPUT"
-sha256sum "$ARTIFACT" "$OUTPUT"
+"$SHA256SUM" "${SHA256_ARGS[@]}" "$ARTIFACT" "$OUTPUT"

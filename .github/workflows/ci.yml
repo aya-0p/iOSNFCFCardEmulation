@@ -25,9 +25,29 @@ jobs:
 
   apple-build:
     runs-on: macos-15
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - name: Check out source
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-      - name: Compile iOS targets
-        run: bash scripts/build-ios-ci.sh
+      - name: Install packaging tools
+        run: brew install dpkg ldid
+      - name: Install Theos
+        env:
+          THEOS: ${{ runner.temp }}/theos
+        run: |
+          git clone --depth 1 --recurse-submodules https://github.com/theos/theos.git "$THEOS"
+          "$THEOS/bin/bootstrap.sh"
+          mkdir -p "$THEOS/sdks"
+          ln -s "$(xcrun --sdk iphoneos --show-sdk-path)" "$THEOS/sdks/iPhoneOS17.5.sdk"
+      - name: Build package
+        env:
+          THEOS: ${{ runner.temp }}/theos
+          TARGET: arm64e-apple-ios17.6.1
+        run: bash scripts/build.sh
+      - name: Upload iOS arm64e package
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: iosnfcfcardemulation-ios17.6.1-arm64e
+          path: dist/*.deb
+          if-no-files-found: error
+          retention-days: 14

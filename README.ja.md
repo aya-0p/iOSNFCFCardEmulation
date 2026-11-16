@@ -63,6 +63,13 @@ THEOS="$HOME/theos" bash scripts/build.sh
 
 生成物は`dist/org.hoshitsugi.iosnfcfcardemulation_0.1.0_iphoneos-arm64.deb`です。
 
+GitHub Actions の `apple-build` ジョブでは、README に記載した
+`scripts/build.sh` と同じパッケージビルドを `macos-15` 上で実行します。
+Xcode の iPhoneOS SDKを使用し、`arm64e-apple-ios17.6.1` を対象にします。
+生成された `.deb` パッケージは
+`iosnfcfcardemulation-ios17.6.1-arm64e` というワークフロー成果物として
+公開されます。
+
 ## ライセンス
 
 [Apache License 2.0](LICENSE)

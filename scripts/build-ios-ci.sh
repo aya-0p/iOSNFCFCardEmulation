@@ -7,9 +7,10 @@ SDK=$(xcrun --sdk iphoneos --show-sdk-path)
 CLANG=$(xcrun -f clang++)
 BUILD_DIR="$ROOT/build/ios-ci"
 mkdir -p "$BUILD_DIR"
+TARGET="arm64e-apple-ios17.6.1"
 
 "$CLANG" -std=c++17 -fblocks -O2 -Wall -Wextra -Werror -dynamiclib \
-    -target arm64-apple-ios16.0 -isysroot "$SDK" \
+    -target "$TARGET" -isysroot "$SDK" \
     -F"$SDK/System/Library/Frameworks" \
     -I"$ROOT/Sources" -I"$ROOT/Sources/Core" \
     -I"$ROOT/Sources/IPC" -I"$ROOT/Sources/Platform" \
@@ -31,7 +32,7 @@ mkdir -p "$BUILD_DIR"
     -o "$BUILD_DIR/iOSNFCFCardEmulation.dylib"
 
 "$CLANG" -std=c++17 -O2 -Wall -Wextra -Werror \
-    -target arm64-apple-ios16.0 -isysroot "$SDK" \
+    -target "$TARGET" -isysroot "$SDK" \
     -I"$ROOT/Sources" -I"$ROOT/Sources/Core" -I"$ROOT/Sources/IPC" \
     "$ROOT/Helpers/nfcf_command.cpp" \
     "$ROOT/Sources/IPC/CommandProtocol.cpp" \
@@ -40,6 +41,6 @@ mkdir -p "$BUILD_DIR"
     -o "$BUILD_DIR/nfcf-command"
 
 "$(xcrun -f clang)" -fblocks -O2 -Wall -Wextra -Werror \
-    -target arm64-apple-ios16.0 -isysroot "$SDK" \
+    -target "$TARGET" -isysroot "$SDK" \
     "$ROOT/Helpers/nfcd_xpc_wake.c" -framework Foundation \
     -o "$BUILD_DIR/nfcd-xpc-wake"

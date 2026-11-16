@@ -63,6 +63,12 @@ THEOS="$HOME/theos" bash scripts/build.sh
 
 The package is written to `dist/org.hoshitsugi.iosnfcfcardemulation_0.1.0_iphoneos-arm64.deb`.
 
+The GitHub Actions `apple-build` job installs Theos and runs the same
+`scripts/build.sh` package build on `macos-15`. It uses Theos's Darwin
+toolchain and an iPhoneOS SDK from Xcode, targeting
+`arm64e-apple-ios17.6.1`. The resulting `.deb` package is published as the
+`iosnfcfcardemulation-ios17.6.1-arm64e` workflow artifact.
+
 ## License
 
 [Apache License 2.0](LICENSE)
