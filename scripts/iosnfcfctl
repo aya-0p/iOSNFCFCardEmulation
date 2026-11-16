@@ -391,21 +391,27 @@ restart_nfcd() {
 }
 
 start_emulation() {
-    [ -r "$PROFILE_RECORD" ] && [ -r "$PROFILE_MARKER" ] || {
+    if [ ! -r "$PROFILE_RECORD" ] || [ ! -r "$PROFILE_MARKER" ]; then
         echo "Apply an NFC-F profile before starting." >&2
+        emit_json false start failed inactive none profile-required \
+            "開始前にNFC-Fプロファイルを適用してください" ""
         return 1
-    }
+    fi
     "$COMMAND_HELPER" validate-profile
     requested=$(record_fingerprint)
     selected=
     IFS= read -r selected < "$PROFILE_MARKER" || true
     if [ -z "$selected" ] || [ "$requested" != "$selected" ]; then
         echo "The profile record changed; apply it again before starting." >&2
+        emit_json false start failed inactive none profile-changed \
+            "プロファイルが変更されています。再適用してください" ""
         return 1
     fi
     start_pid=$(find_nfcd_pid)
     [ -n "$start_pid" ] || {
         echo "nfcd is not running; wake NFC once and retry." >&2
+        emit_json false start unavailable inactive none nfcd-not-running \
+            "nfcdが起動していません。NFCを一度有効にして再試行してください" ""
         return 1
     }
     inject_harness "$start_pid"
