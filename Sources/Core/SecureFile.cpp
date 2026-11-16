@@ -1,5 +1,10 @@
 #include "SecureFile.hpp"
 
+#if __has_include(<libroot/libroot.h>)
+#include <libroot/libroot.h>
+#define NFCF_HAS_LIBROOT 1
+#endif
+
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -12,6 +17,21 @@
 #include <unistd.h>
 
 namespace nfcf_backend {
+
+static const char *ResolvePath(const char *path, char (&buffer)[PATH_MAX]) {
+#if NFCF_HAS_LIBROOT
+    constexpr const char kJbrootPrefix[] = "/var/jb/";
+    if (strncmp(path, kJbrootPrefix, sizeof(kJbrootPrefix) - 1) == 0) {
+        const char *rootful_path = path + sizeof(kJbrootPrefix) - 1;
+        buffer[0] = '/';
+        if (libroot_dyn_jbrootpath(rootful_path, buffer) != nullptr)
+            return buffer;
+    }
+#else
+    (void)buffer;
+#endif
+    return path;
+}
 
 static bool WriteAll(int fd, const void *bytes, size_t length) {
     const uint8_t *cursor = static_cast<const uint8_t *>(bytes);
@@ -26,10 +46,12 @@ static bool WriteAll(int fd, const void *bytes, size_t length) {
 }
 
 static int OpenReadableFile(const char *path) {
-    int fd = open(path, O_RDONLY);
+    char resolved[PATH_MAX] = {};
+    const char *access_path = ResolvePath(path, resolved);
+    int fd = open(access_path, O_RDONLY);
     if (fd >= 0 || errno != ENOENT) return fd;
     int open_errno = errno;
-    FILE *stream = fopen(path, "rb");
+    FILE *stream = fopen(access_path, "rb");
     if (stream != nullptr) {
         int stream_fd = dup(fileno(stream));
         int close_result = fclose(stream);
@@ -37,11 +59,11 @@ static int OpenReadableFile(const char *path) {
         if (stream_fd >= 0) close(stream_fd);
     } else {
         fprintf(stderr, "ReadSecureFileExact fopen failed: %s errno=%d (%s)\n",
-                path, errno, strerror(errno));
+                access_path, errno, strerror(errno));
     }
-    if (access(path, R_OK) != 0)
+    if (access(access_path, R_OK) != 0)
         fprintf(stderr, "ReadSecureFileExact access failed: %s errno=%d (%s)\n",
-                path, errno, strerror(errno));
+                access_path, errno, strerror(errno));
     errno = open_errno;
 
     if (strncmp(path, "/var/mobile/", 12) == 0) {
@@ -80,14 +102,14 @@ static int OpenReadableFile(const char *path) {
         }
     }
 
-    char resolved[PATH_MAX] = {};
-    if (realpath(path, resolved) != nullptr) {
-        fd = open(resolved, O_RDONLY);
+    char realpath_resolved[PATH_MAX] = {};
+    if (realpath(path, realpath_resolved) != nullptr) {
+        fd = open(realpath_resolved, O_RDONLY);
         if (fd >= 0 || errno != ENOENT) return fd;
-        if (strncmp(resolved, "/rootfs/", 8) != 0) {
+        if (strncmp(realpath_resolved, "/rootfs/", 8) != 0) {
             char rootfs_path[PATH_MAX] = {};
             int count = snprintf(rootfs_path, sizeof(rootfs_path),
-                                 "/rootfs%s", resolved);
+                                 "/rootfs%s", realpath_resolved);
             if (count > 0 && static_cast<size_t>(count) < sizeof(rootfs_path))
                 return open(rootfs_path, O_RDONLY);
         }
@@ -97,21 +119,26 @@ static int OpenReadableFile(const char *path) {
 
 bool EnsurePrivateDirectory(const char *path) {
     if (path == nullptr || path[0] != '/') return false;
-    if (mkdir(path, 0700) != 0 && errno != EEXIST) return false;
+    char resolved[PATH_MAX] = {};
+    const char *access_path = ResolvePath(path, resolved);
+    if (mkdir(access_path, 0700) != 0 && errno != EEXIST) return false;
     struct stat info = {};
-    if (lstat(path, &info) != 0 || !S_ISDIR(info.st_mode) ||
+    if (lstat(access_path, &info) != 0 || !S_ISDIR(info.st_mode) ||
         info.st_uid != getuid() || (info.st_mode & 077) != 0) {
         return false;
     }
-    return chmod(path, 0700) == 0;
+    return chmod(access_path, 0700) == 0;
 }
 
 bool WriteSecureFileAtomically(const char *path, const void *bytes,
                                size_t length) {
     if (path == nullptr || path[0] != '/' || bytes == nullptr || length == 0)
         return false;
+    char resolved[PATH_MAX] = {};
+    const char *access_path = ResolvePath(path, resolved);
     char temporary[PATH_MAX] = {};
-    int count = snprintf(temporary, sizeof(temporary), "%s.tmp.%d", path,
+    int count = snprintf(temporary, sizeof(temporary), "%s.tmp.%d",
+                         access_path,
                          getpid());
     if (count <= 0 || static_cast<size_t>(count) >= sizeof(temporary))
         return false;
@@ -123,7 +150,7 @@ bool WriteSecureFileAtomically(const char *path, const void *bytes,
     bool success = fchmod(fd, 0600) == 0 && WriteAll(fd, bytes, length) &&
                    fsync(fd) == 0;
     if (close(fd) != 0) success = false;
-    if (success && rename(temporary, path) != 0) success = false;
+    if (success && rename(temporary, access_path) != 0) success = false;
     if (!success) (void)unlink(temporary);
     return success;
 }

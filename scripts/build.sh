@@ -28,6 +28,13 @@ fi
 
 CLANG=${CLANG:-"$TOOLCHAIN/clang++"}
 CLANG_C=${CLANG_C:-"$TOOLCHAIN/clang"}
+ROOTLESS_INCLUDE="$THEOS/vendor/include"
+ROOTLESS_LIBRARY=$(find "$THEOS/vendor/lib" -name libroot.a -print -quit 2>/dev/null || true)
+if [[ -z "$ROOTLESS_LIBRARY" ]]; then
+    echo "Theos libroot.a was not found." >&2
+    exit 1
+fi
+ROOTLESS_FLAGS=(-I"$ROOTLESS_INCLUDE" "$ROOTLESS_LIBRARY")
 
 if [[ ! -d "$SDK" ]]; then
     echo "Set SDK to a legally obtained iPhoneOS SDK directory." >&2
@@ -78,6 +85,7 @@ mkdir -p "$HELPER_STAGE" "$DIST"
     "$ROOT/Sources/Core/SecureFile.cpp" \
     "$ROOT/Sources/IPC/CommandProtocol.cpp" \
     -framework Foundation -framework CoreFoundation \
+    "${ROOTLESS_FLAGS[@]}" \
     "${LINKER_FLAGS[@]}" \
     -Wl,-install_name,/var/jb/Library/MobileSubstrate/DynamicLibraries/iOSNFCFCardEmulation.dylib \
     -o "$ARTIFACT"
@@ -89,6 +97,7 @@ build_cpp_helper() {
     "$CLANG" -std=c++17 -O2 -Wall -Wextra -Werror -arch "$ARCH" -target "$TARGET" \
         -isysroot "$SDK" -I"$ROOT/Sources" -I"$ROOT/Sources/Core" \
         -I"$ROOT/Sources/IPC" ${HELPER_LINKER_FLAG} "$@" \
+        "${ROOTLESS_FLAGS[@]}" \
         -o "$HELPER_STAGE/$output_name"
     "$LDID" -S "$HELPER_STAGE/$output_name"
 }
