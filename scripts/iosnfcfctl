@@ -494,11 +494,17 @@ profile_show() {
 }
 
 profile_apply() {
-    [ -r "$PROFILE_RECORD" ] || {
+    if [ ! -r "$PROFILE_RECORD" ]; then
         echo "No protected NFC-F profile record is available." >&2
+        emit_json false profile-apply failed inactive none profile-missing \
+            "NFC-Fプロファイルが見つかりません" ""
         return 1
-    }
-    "$COMMAND_HELPER" validate-profile
+    fi
+    if ! "$COMMAND_HELPER" validate-profile; then
+        emit_json false profile-apply failed inactive none profile-invalid \
+            "NFC-Fプロファイルの形式または内容が不正です" ""
+        return 1
+    fi
     requested=$(record_fingerprint)
     if routing_is_active; then
         active=

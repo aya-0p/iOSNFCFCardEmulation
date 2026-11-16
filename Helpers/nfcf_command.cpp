@@ -22,11 +22,22 @@ int main(int argc, char **argv) {
         nfcf::Profile profile = {};
         if (!nfcf_backend::ReadSecureFileExact(
                 nfcf_backend::kProfileRecordPath, encoded, sizeof(encoded),
-                getuid()) ||
-            !nfcf::DecodeProfileRecordBytes(
-                encoded, sizeof(encoded), &record) ||
-            !nfcf::DecodeProfileRecord(record, &profile)) {
-            fprintf(stderr, "No valid protected NFC-F profile record.\n");
+                getuid())) {
+            fprintf(stderr,
+                    "Profile read failed: expected a 99-byte mode 0600 file "
+                    "owned by uid %u.\n",
+                    static_cast<unsigned>(getuid()));
+            return 1;
+        }
+        if (!nfcf::DecodeProfileRecordBytes(
+                encoded, sizeof(encoded), &record)) {
+            fprintf(stderr,
+                    "Profile format invalid: check magic, version, "
+                    "checksum, block count, and zero-filled unused blocks.\n");
+            return 1;
+        }
+        if (!nfcf::DecodeProfileRecord(record, &profile)) {
+            fprintf(stderr, "Profile values are invalid.\n");
             return 1;
         }
         if (strcmp(argv[1], "fingerprint-profile") == 0) {
