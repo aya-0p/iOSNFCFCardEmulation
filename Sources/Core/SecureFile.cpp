@@ -33,6 +33,7 @@ static int OpenReadableFile(const char *path) {
         const char *roots[] = {
             "/rootfs/private/var/mobile/Containers/Shared/AppGroup",
             "/private/var/mobile/Containers/Shared/AppGroup",
+            "/var/mobile/Containers/Shared/AppGroup",
         };
         for (const char *root : roots) {
             DIR *directory = opendir(root);
