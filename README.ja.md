@@ -61,7 +61,7 @@ bash scripts/test.sh
 THEOS="$HOME/theos" bash scripts/build.sh
 ```
 
-生成物は`dist/org.hoshitsugi.iosnfcfcardemulation_0.1.0_iphoneos-arm64e.deb`です。
+生成物は`dist/org.hoshitsugi.iosnfcfcardemulation_0.1.1_iphoneos-arm64e.deb`です。
 
 GitHub Actions の `apple-build` ジョブでは、README に記載した
 `scripts/build.sh` と同じパッケージビルドを `macos-15` 上で実行します。
