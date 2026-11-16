@@ -5,13 +5,14 @@ set -euo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 THEOS=${THEOS:-"$HOME/theos"}
 TARGET=${TARGET:-"arm64e-apple-ios17.6.1"}
+LINKER_FLAGS=()
+HELPER_LINKER_FLAGS=()
 
 if [[ "$(uname -s)" == "Darwin" ]]; then
     TOOLCHAIN=${TOOLCHAIN:-"$(dirname "$(xcrun -f clang++)")"}
     LDID=${LDID:-ldid}
     SDK=${SDK:-"$(find -L "$THEOS/sdks" -maxdepth 1 -type d -name 'iPhoneOS*.sdk' | sort | tail -n 1)"}
     LINKER_FLAGS=(-Wl,-no_warn_inits)
-    HELPER_LINKER_FLAGS=()
     SHA256SUM=${SHA256SUM:-shasum}
     SHA256_ARGS=(-a 256)
 else
