@@ -49,8 +49,15 @@ static int OpenReadableFile(const char *path) {
                         globfree(&matches);
                         return fd;
                     }
+                    fprintf(stderr,
+                            "ReadSecureFileExact candidate failed: %s "
+                            "errno=%d (%s)\n",
+                            rootless_path, errno, strerror(errno));
                 }
             }
+            fprintf(stderr, "ReadSecureFileExact glob matches: pattern=%s "
+                            "count=%zu\n",
+                    pattern, matches.gl_pathc);
             globfree(&matches);
         }
     }
