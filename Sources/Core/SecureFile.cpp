@@ -1,8 +1,8 @@
 #include "SecureFile.hpp"
 
+#include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
-#include <glob.h>
 #include <limits.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -30,43 +30,38 @@ static int OpenReadableFile(const char *path) {
     if (fd >= 0 || errno != ENOENT) return fd;
 
     if (strncmp(path, "/var/mobile/", 12) == 0) {
-        const char *patterns[] = {
-            "/rootfs/private/var/mobile/Containers/Shared/AppGroup/.jbroot-*",
-            "/private/var/mobile/Containers/Shared/AppGroup/.jbroot-*",
-            "/var/mobile/Containers/Shared/AppGroup/.jbroot-*",
+        const char *roots[] = {
+            "/rootfs/private/var/mobile/Containers/Shared/AppGroup",
+            "/private/var/mobile/Containers/Shared/AppGroup",
+            "/var/mobile/Containers/Shared/AppGroup",
         };
-        for (const char *pattern : patterns) {
-            glob_t matches = {};
-            int glob_result = glob(pattern, 0, nullptr, &matches);
-            if (glob_result != 0) {
-                fprintf(stderr,
-                        "ReadSecureFileExact glob failed: pattern=%s "
-                        "result=%d\n",
-                        pattern, glob_result);
-                globfree(&matches);
+        for (const char *root : roots) {
+            DIR *directory = opendir(root);
+            if (directory == nullptr) {
+                fprintf(stderr, "ReadSecureFileExact opendir failed: %s "
+                                "errno=%d (%s)\n",
+                        root, errno, strerror(errno));
                 continue;
             }
-            fprintf(stderr, "ReadSecureFileExact glob matches: pattern=%s "
-                            "count=%zu\n",
-                    pattern, matches.gl_pathc);
-            for (size_t index = 0; index < matches.gl_pathc; ++index) {
+            struct dirent *entry = nullptr;
+            while ((entry = readdir(directory)) != nullptr) {
+                if (strncmp(entry->d_name, ".jbroot-", 8) != 0) continue;
                 char rootless_path[PATH_MAX] = {};
                 int count = snprintf(rootless_path, sizeof(rootless_path),
-                                     "%s%s", matches.gl_pathv[index], path);
+                                     "%s/%s%s", root, entry->d_name, path);
                 if (count > 0 &&
                     static_cast<size_t>(count) < sizeof(rootless_path)) {
                     fd = open(rootless_path, O_RDONLY);
                     if (fd >= 0) {
-                        globfree(&matches);
+                        closedir(directory);
                         return fd;
                     }
-                    fprintf(stderr,
-                            "ReadSecureFileExact candidate failed: %s "
-                            "errno=%d (%s)\n",
+                    fprintf(stderr, "ReadSecureFileExact candidate failed: %s "
+                                    "errno=%d (%s)\n",
                             rootless_path, errno, strerror(errno));
                 }
             }
-            globfree(&matches);
+            closedir(directory);
         }
     }
 
