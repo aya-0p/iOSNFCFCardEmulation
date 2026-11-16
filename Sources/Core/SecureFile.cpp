@@ -37,7 +37,18 @@ static int OpenReadableFile(const char *path) {
         };
         for (const char *pattern : patterns) {
             glob_t matches = {};
-            if (glob(pattern, 0, nullptr, &matches) != 0) continue;
+            int glob_result = glob(pattern, 0, nullptr, &matches);
+            if (glob_result != 0) {
+                fprintf(stderr,
+                        "ReadSecureFileExact glob failed: pattern=%s "
+                        "result=%d\n",
+                        pattern, glob_result);
+                globfree(&matches);
+                continue;
+            }
+            fprintf(stderr, "ReadSecureFileExact glob matches: pattern=%s "
+                            "count=%zu\n",
+                    pattern, matches.gl_pathc);
             for (size_t index = 0; index < matches.gl_pathc; ++index) {
                 char rootless_path[PATH_MAX] = {};
                 int count = snprintf(rootless_path, sizeof(rootless_path),
@@ -55,9 +66,6 @@ static int OpenReadableFile(const char *path) {
                             rootless_path, errno, strerror(errno));
                 }
             }
-            fprintf(stderr, "ReadSecureFileExact glob matches: pattern=%s "
-                            "count=%zu\n",
-                    pattern, matches.gl_pathc);
             globfree(&matches);
         }
     }
