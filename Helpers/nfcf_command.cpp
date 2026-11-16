@@ -1,8 +1,11 @@
 #include <notify.h>
 #include <CommonCrypto/CommonDigest.h>
+#include <errno.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #include "CommandProtocol.hpp"
@@ -20,13 +23,49 @@ int main(int argc, char **argv) {
         uint8_t encoded[nfcf::kProfileRecordEncodedSize] = {};
         nfcf::ProfileRecord record = {};
         nfcf::Profile profile = {};
-        if (!nfcf_backend::ReadSecureFileExact(
-                nfcf_backend::kProfileRecordPath, encoded, sizeof(encoded),
-                getuid())) {
+        int profile_fd = open(nfcf_backend::kProfileRecordPath,
+                              O_RDONLY | O_NOFOLLOW | O_CLOEXEC);
+        if (profile_fd < 0) {
             fprintf(stderr,
-                    "Profile read failed: expected a 99-byte mode 0600 file "
-                    "owned by uid %u.\n",
-                    static_cast<unsigned>(getuid()));
+                    "Profile open failed: errno=%d (%s).\n", errno,
+                    strerror(errno));
+            return 1;
+        }
+        struct stat profile_info = {};
+        bool profile_stat_ok = fstat(profile_fd, &profile_info) == 0;
+        if (!profile_stat_ok) {
+            fprintf(stderr, "Profile fstat failed: errno=%d (%s).\n", errno,
+                    strerror(errno));
+            close(profile_fd);
+            return 1;
+        }
+        if (!S_ISREG(profile_info.st_mode) ||
+            profile_info.st_uid != getuid() ||
+            (profile_info.st_mode & 0777) != 0600 ||
+            profile_info.st_size !=
+                static_cast<off_t>(sizeof(encoded))) {
+            fprintf(stderr,
+                    "Profile metadata invalid: regular=%d uid=%u expected=%u "
+                    "mode=%04o size=%lld expected=%zu.\n",
+                    S_ISREG(profile_info.st_mode) ? 1 : 0,
+                    static_cast<unsigned>(profile_info.st_uid),
+                    static_cast<unsigned>(getuid()),
+                    static_cast<unsigned>(profile_info.st_mode & 0777),
+                    static_cast<long long>(profile_info.st_size),
+                    sizeof(encoded));
+            close(profile_fd);
+            return 1;
+        }
+        ssize_t bytes_read = read(profile_fd, encoded, sizeof(encoded));
+        int read_errno = errno;
+        int close_result = close(profile_fd);
+        if (bytes_read != static_cast<ssize_t>(sizeof(encoded)) ||
+            close_result != 0) {
+            fprintf(stderr,
+                    "Profile read failed: bytes=%ld expected=%zu "
+                    "close=%d errno=%d (%s).\n",
+                    static_cast<long>(bytes_read), sizeof(encoded),
+                    close_result, read_errno, strerror(read_errno));
             return 1;
         }
         if (!nfcf::DecodeProfileRecordBytes(
