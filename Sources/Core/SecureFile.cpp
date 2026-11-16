@@ -28,6 +28,13 @@ static bool WriteAll(int fd, const void *bytes, size_t length) {
 static int OpenReadableFile(const char *path) {
     int fd = open(path, O_RDONLY);
     if (fd >= 0 || errno != ENOENT) return fd;
+    FILE *stream = fopen(path, "rb");
+    if (stream != nullptr) {
+        int stream_fd = dup(fileno(stream));
+        int close_result = fclose(stream);
+        if (stream_fd >= 0 && close_result == 0) return stream_fd;
+        if (stream_fd >= 0) close(stream_fd);
+    }
 
     if (strncmp(path, "/var/mobile/", 12) == 0) {
         const char *roots[] = {
