@@ -27,6 +27,19 @@ int main(int argc, char **argv) {
         int profile_fd = open(nfcf_backend::kProfileRecordPath, O_RDONLY);
         char resolved_profile_path[PATH_MAX] = {};
         if (profile_fd < 0 && errno == ENOENT) {
+            char jbroot[PATH_MAX] = {};
+            if (strncmp(nfcf_backend::kProfileRecordPath, "/var/mobile/",
+                        12) == 0 &&
+                realpath("/var/jb", jbroot) != nullptr) {
+                int count = snprintf(
+                    resolved_profile_path, sizeof(resolved_profile_path),
+                    "%s%s", jbroot, nfcf_backend::kProfileRecordPath);
+                if (count > 0 &&
+                    static_cast<size_t>(count) < sizeof(resolved_profile_path))
+                    profile_fd = open(resolved_profile_path, O_RDONLY);
+            }
+        }
+        if (profile_fd < 0 && errno == ENOENT) {
             if (realpath(nfcf_backend::kProfileRecordPath,
                          resolved_profile_path) != nullptr) {
                 profile_fd = open(resolved_profile_path, O_RDONLY);

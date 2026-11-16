@@ -28,6 +28,20 @@ static int OpenReadableFile(const char *path) {
     int fd = open(path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC);
     if (fd >= 0 || errno != ENOENT) return fd;
 
+    if (strncmp(path, "/var/mobile/", 12) == 0) {
+        char jbroot[PATH_MAX] = {};
+        if (realpath("/var/jb", jbroot) != nullptr) {
+            char rootless_path[PATH_MAX] = {};
+            int count = snprintf(rootless_path, sizeof(rootless_path),
+                                 "%s%s", jbroot, path);
+            if (count > 0 &&
+                static_cast<size_t>(count) < sizeof(rootless_path)) {
+                fd = open(rootless_path, O_RDONLY | O_CLOEXEC);
+                if (fd >= 0 || errno != ENOENT) return fd;
+            }
+        }
+    }
+
     char resolved[PATH_MAX] = {};
     if (realpath(path, resolved) != nullptr) {
         fd = open(resolved, O_RDONLY | O_CLOEXEC);
