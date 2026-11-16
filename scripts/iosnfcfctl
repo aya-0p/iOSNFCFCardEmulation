@@ -12,7 +12,14 @@ HELPERS=${IOS_NFCF_HELPERS:-$PACKAGE_ROOT/usr/libexec/iosnfcf}
 COMMAND_HELPER=${IOS_NFCF_COMMAND_HELPER:-$HELPERS/nfcf-command}
 OPAINJECT=${IOS_NFCF_OPAINJECT:-/var/jb/usr/bin/opainject}
 
-STATE_DIR=${IOS_NFCF_STATE_DIR:-/var/mobile/Library/Caches/org.hoshitsugi.iosnfcfcardemulation}
+STATE_DIR=${IOS_NFCF_STATE_DIR:-/var/jb/Library/Caches/org.hoshitsugi.iosnfcfcardemulation}
+if [ -n "${IOS_NFCF_SOURCE_STATE_DIR:-}" ]; then
+    SOURCE_STATE_DIR=$IOS_NFCF_SOURCE_STATE_DIR
+elif [ -n "${IOS_NFCF_STATE_DIR:-}" ]; then
+    SOURCE_STATE_DIR=$IOS_NFCF_STATE_DIR
+else
+    SOURCE_STATE_DIR=/var/mobile/Library/Caches/org.hoshitsugi.iosnfcfcardemulation
+fi
 OBSERVER_RESULT=$STATE_DIR/nci-read.log
 OBSERVER_READY=$STATE_DIR/nci-read.ready
 SETCE_RESULT=$STATE_DIR/setce.result
@@ -22,6 +29,7 @@ PREWARM_RESULT=$STATE_DIR/prewarm.result
 PROFILE_RESULT=$STATE_DIR/profile.result
 PROFILE_READY=$STATE_DIR/profile.ready
 PROFILE_RECORD=$STATE_DIR/profile.record
+SOURCE_PROFILE_RECORD=$SOURCE_STATE_DIR/profile.record
 PROFILE_MARKER=$STATE_DIR/profile.selected
 INJECT_LOG=$STATE_DIR/inject.log
 WAKE_LOG=$STATE_DIR/wake.log
@@ -262,7 +270,7 @@ write_profile_marker() {
 }
 
 clear_profile_files() {
-    rm -f "$PROFILE_RECORD" "$PROFILE_MARKER"
+    rm -f "$PROFILE_RECORD" "$SOURCE_PROFILE_RECORD" "$PROFILE_MARKER"
 }
 
 load_profile_into_backend() {
@@ -494,10 +502,21 @@ profile_show() {
 }
 
 profile_apply() {
-    if [ ! -r "$PROFILE_RECORD" ]; then
+    if [ ! -r "$SOURCE_PROFILE_RECORD" ]; then
         echo "No protected NFC-F profile record is available." >&2
         emit_json false profile-apply failed inactive none profile-missing \
             "NFC-Fプロファイルが見つかりません" ""
+        return 1
+    fi
+    profile_tmp=$PROFILE_RECORD.tmp.$$
+    rm -f "$profile_tmp"
+    if ! cp "$SOURCE_PROFILE_RECORD" "$profile_tmp" ||
+       ! chmod 0600 "$profile_tmp" ||
+       ! mv -f "$profile_tmp" "$PROFILE_RECORD"; then
+        rm -f "$profile_tmp"
+        echo "Could not synchronize the NFC-F profile record." >&2
+        emit_json false profile-apply failed inactive none profile-sync-failed \
+            "NFC-Fプロファイルを共有領域へ同期できませんでした" ""
         return 1
     fi
     if ! "$COMMAND_HELPER" validate-profile; then

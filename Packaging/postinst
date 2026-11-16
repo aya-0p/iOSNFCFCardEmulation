@@ -4,12 +4,14 @@ umask 077
 
 case "${1:-}" in
     configure)
-        state=/var/mobile/Library/Caches/org.hoshitsugi.iosnfcfcardemulation
+        state=/var/jb/Library/Caches/org.hoshitsugi.iosnfcfcardemulation
+        input=/var/mobile/Library/Caches/org.hoshitsugi.iosnfcfcardemulation
         if [ -L "$state" ] || { [ -e "$state" ] && [ ! -d "$state" ]; }; then
             echo "Refusing unsafe backend state path." >&2
             exit 1
         fi
         install -d -o 501 -g 501 -m 0700 "$state"
+        install -d -o 501 -g 501 -m 0700 "$input"
         ps -A 2>/dev/null | while IFS=' ' read -r pid tty cpu command; do
             if [ "$command" = "/usr/libexec/nfcd" ]; then
                 kill "$pid" 2>/dev/null || true

@@ -37,6 +37,17 @@ The client writes a 99-byte profile record to:
 /var/mobile/Library/Caches/org.hoshitsugi.iosnfcfcardemulation/profile.record
 ```
 
+When `profile apply` is run, `iosnfcfctl` validates and atomically synchronizes
+this input into the rootless backend sharing area:
+
+```text
+/var/jb/Library/Caches/org.hoshitsugi.iosnfcfcardemulation/profile.record
+```
+
+The helper and the injected `nfcd` code read only the synchronized copy. This
+avoids rootless path-namespace differences between shell processes and
+injected processes.
+
 See [docs/profile-record.md](docs/profile-record.md) for the binary format.
 
 ```sh

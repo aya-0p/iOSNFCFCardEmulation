@@ -37,6 +37,17 @@ UIやカード読み取り機能はありません。利用側のアプリがプ
 /var/mobile/Library/Caches/org.hoshitsugi.iosnfcfcardemulation/profile.record
 ```
 
+`profile apply`を実行すると、`iosnfcfctl`が入力を検証し、rootless環境
+でバックエンドが共有する次の場所へアトミックに同期します。
+
+```text
+/var/jb/Library/Caches/org.hoshitsugi.iosnfcfcardemulation/profile.record
+```
+
+ヘルパーと注入された`nfcd`コードは同期済みのコピーだけを読み込みます。
+これにより、シェルと注入プロセスでrootlessのパス名前空間が異なる場合も
+同じプロファイルを共有できます。
+
 バイナリ形式は[docs/profile-record.md](docs/profile-record.md)を参照してください。
 
 ```sh
