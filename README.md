@@ -61,7 +61,7 @@ bash scripts/test.sh
 THEOS="$HOME/theos" bash scripts/build.sh
 ```
 
-The package is written to `dist/org.hoshitsugi.iosnfcfcardemulation_0.1.0_iphoneos-arm64.deb`.
+The package is written to `dist/org.hoshitsugi.iosnfcfcardemulation_0.1.0_iphoneos-arm64e.deb`.
 
 The GitHub Actions `apple-build` job installs Theos and runs the same
 `scripts/build.sh` package build on `macos-15`. It uses Theos's Darwin

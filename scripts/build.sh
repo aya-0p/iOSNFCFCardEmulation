@@ -5,6 +5,7 @@ set -euo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 THEOS=${THEOS:-"$HOME/theos"}
 TARGET=${TARGET:-"arm64e-apple-ios17.6.1"}
+ARCH=${ARCH:-arm64e}
 LINKER_FLAGS=()
 HELPER_LINKER_FLAG=""
 
@@ -54,11 +55,11 @@ ARTIFACT="$WORK_DIR/iOSNFCFCardEmulation.dylib"
 HELPER_STAGE="$WORK_DIR/helpers"
 STAGE="$WORK_DIR/stage"
 DIST="$ROOT/dist"
-OUTPUT="$DIST/${PACKAGE}_${VERSION}_iphoneos-arm64.deb"
+OUTPUT="$DIST/${PACKAGE}_${VERSION}_iphoneos-arm64e.deb"
 mkdir -p "$HELPER_STAGE" "$DIST"
 
 "$CLANG" -std=c++17 -fblocks -O2 -Wall -Wextra -Werror -dynamiclib \
-    -target "$TARGET" -isysroot "$SDK" \
+    -arch "$ARCH" -target "$TARGET" -isysroot "$SDK" \
     -F"$SDK/System/Library/Frameworks" \
     -I"$ROOT/Sources" \
     -I"$ROOT/Sources/Core" \
@@ -85,14 +86,14 @@ mkdir -p "$HELPER_STAGE" "$DIST"
 build_cpp_helper() {
     local output_name=$1
     shift
-    "$CLANG" -std=c++17 -O2 -Wall -Wextra -Werror -target "$TARGET" \
+    "$CLANG" -std=c++17 -O2 -Wall -Wextra -Werror -arch "$ARCH" -target "$TARGET" \
         -isysroot "$SDK" -I"$ROOT/Sources" -I"$ROOT/Sources/Core" \
         -I"$ROOT/Sources/IPC" ${HELPER_LINKER_FLAG} "$@" \
         -o "$HELPER_STAGE/$output_name"
     "$LDID" -S "$HELPER_STAGE/$output_name"
 }
 
-"$CLANG_C" -fblocks -O2 -Wall -Wextra -Werror -target "$TARGET" \
+"$CLANG_C" -fblocks -O2 -Wall -Wextra -Werror -arch "$ARCH" -target "$TARGET" \
     -isysroot "$SDK" ${HELPER_LINKER_FLAG} \
     "$ROOT/Helpers/nfcd_xpc_wake.c" -framework Foundation \
     -o "$HELPER_STAGE/nfcd-xpc-wake"
@@ -102,6 +103,16 @@ build_cpp_helper nfcf-command \
     "$ROOT/Sources/IPC/CommandProtocol.cpp" \
     "$ROOT/Sources/Core/SecureFile.cpp" \
     "$ROOT/Sources/Core/NFCFProfileRecord.cpp"
+
+if [[ "$(uname -s)" == "Darwin" ]]; then
+    for binary in "$ARTIFACT" "$HELPER_STAGE"/*; do
+        architectures=$(lipo -archs "$binary")
+        if [[ "$architectures" != "$ARCH" ]]; then
+            echo "Expected $binary to contain only $ARCH, found: $architectures" >&2
+            exit 1
+        fi
+    done
+fi
 
 mkdir -p \
     "$STAGE/DEBIAN" \

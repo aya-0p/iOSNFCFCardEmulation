@@ -43,6 +43,7 @@ jobs:
         env:
           THEOS: ${{ runner.temp }}/theos
           TARGET: arm64e-apple-ios17.6.1
+          ARCH: arm64e
         run: |
           SDK=$(xcrun --sdk iphoneos --show-sdk-path)
           test -n "$SDK"
