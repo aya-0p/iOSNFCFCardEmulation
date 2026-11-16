@@ -127,4 +127,8 @@ install -m 0644 "$ROOT/LICENSE" \
     "$STAGE/var/jb/usr/share/doc/$PACKAGE/LICENSE"
 
 dpkg-deb --build --root-owner-group "$STAGE" "$OUTPUT"
+if [[ ! -f "$OUTPUT" ]]; then
+    echo "Package was not created at: $OUTPUT" >&2
+    exit 1
+fi
 "$SHA256SUM" "${SHA256_ARGS[@]}" "$ARTIFACT" "$OUTPUT"
