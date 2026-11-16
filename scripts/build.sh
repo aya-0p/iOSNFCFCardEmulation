@@ -6,7 +6,7 @@ ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 THEOS=${THEOS:-"$HOME/theos"}
 TARGET=${TARGET:-"arm64e-apple-ios17.6.1"}
 LINKER_FLAGS=()
-HELPER_LINKER_FLAGS=()
+HELPER_LINKER_FLAG=""
 
 if [[ "$(uname -s)" == "Darwin" ]]; then
     TOOLCHAIN=${TOOLCHAIN:-"$(dirname "$(xcrun -f clang++)")"}
@@ -20,7 +20,7 @@ else
     LDID=${LDID:-"$THEOS/toolchain/linux/iphone/bin/ldid"}
     SDK=${SDK:-"$THEOS/sdks/iPhoneOS16.5.sdk"}
     LINKER_FLAGS=(-Wl,-add_split_seg_info -Wl,-no_auth_data -Wl,-no_warn_inits)
-    HELPER_LINKER_FLAGS=(-Wl,-no_auth_data)
+    HELPER_LINKER_FLAG="-Wl,-no_auth_data"
     SHA256SUM=${SHA256SUM:-sha256sum}
     SHA256_ARGS=()
 fi
@@ -87,13 +87,13 @@ build_cpp_helper() {
     shift
     "$CLANG" -std=c++17 -O2 -Wall -Wextra -Werror -target "$TARGET" \
         -isysroot "$SDK" -I"$ROOT/Sources" -I"$ROOT/Sources/Core" \
-        -I"$ROOT/Sources/IPC" "${HELPER_LINKER_FLAGS[@]}" "$@" \
+        -I"$ROOT/Sources/IPC" ${HELPER_LINKER_FLAG} "$@" \
         -o "$HELPER_STAGE/$output_name"
     "$LDID" -S "$HELPER_STAGE/$output_name"
 }
 
 "$CLANG_C" -fblocks -O2 -Wall -Wextra -Werror -target "$TARGET" \
-    -isysroot "$SDK" "${HELPER_LINKER_FLAGS[@]}" \
+    -isysroot "$SDK" ${HELPER_LINKER_FLAG} \
     "$ROOT/Helpers/nfcd_xpc_wake.c" -framework Foundation \
     -o "$HELPER_STAGE/nfcd-xpc-wake"
 "$LDID" -S "$HELPER_STAGE/nfcd-xpc-wake"
