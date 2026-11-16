@@ -24,84 +24,13 @@ int main(int argc, char **argv) {
         uint8_t encoded[nfcf::kProfileRecordEncodedSize] = {};
         nfcf::ProfileRecord record = {};
         nfcf::Profile profile = {};
-        int profile_fd = open(nfcf_backend::kProfileRecordPath, O_RDONLY);
-        char resolved_profile_path[PATH_MAX] = {};
-        if (profile_fd < 0 && errno == ENOENT) {
-            char jbroot[PATH_MAX] = {};
-            if (strncmp(nfcf_backend::kProfileRecordPath, "/var/mobile/",
-                        12) == 0 &&
-                realpath("/var/jb", jbroot) != nullptr) {
-                char *jbroot_suffix = strrchr(jbroot, '/');
-                if (jbroot_suffix != nullptr &&
-                    strcmp(jbroot_suffix, "/jb") == 0)
-                    *jbroot_suffix = '\0';
-                int count = snprintf(
-                    resolved_profile_path, sizeof(resolved_profile_path),
-                    "%s%s", jbroot, nfcf_backend::kProfileRecordPath);
-                if (count > 0 &&
-                    static_cast<size_t>(count) < sizeof(resolved_profile_path))
-                    profile_fd = open(resolved_profile_path, O_RDONLY);
-            }
-        }
-        if (profile_fd < 0 && errno == ENOENT) {
-            if (realpath(nfcf_backend::kProfileRecordPath,
-                         resolved_profile_path) != nullptr) {
-                profile_fd = open(resolved_profile_path, O_RDONLY);
-                if (profile_fd < 0 && errno == ENOENT &&
-                    strncmp(resolved_profile_path, "/rootfs/", 8) != 0) {
-                    char rootfs_path[PATH_MAX] = {};
-                    int count = snprintf(rootfs_path, sizeof(rootfs_path),
-                                         "/rootfs%s", resolved_profile_path);
-                    if (count > 0 &&
-                        static_cast<size_t>(count) < sizeof(rootfs_path))
-                        profile_fd = open(rootfs_path, O_RDONLY);
-                }
-            }
-        }
-        if (profile_fd < 0) {
+        if (!nfcf_backend::ReadSecureFileExact(
+                nfcf_backend::kProfileRecordPath, encoded, sizeof(encoded),
+                getuid())) {
             fprintf(stderr,
-                    "Profile open failed: path=%s resolved=%s errno=%d (%s).\n",
-                    nfcf_backend::kProfileRecordPath,
-                    resolved_profile_path[0] != '\0' ? resolved_profile_path
-                                                     : "(unresolved)",
-                    errno, strerror(errno));
-            return 1;
-        }
-        struct stat profile_info = {};
-        bool profile_stat_ok = fstat(profile_fd, &profile_info) == 0;
-        if (!profile_stat_ok) {
-            fprintf(stderr, "Profile fstat failed: errno=%d (%s).\n", errno,
-                    strerror(errno));
-            close(profile_fd);
-            return 1;
-        }
-        if (!S_ISREG(profile_info.st_mode) ||
-            profile_info.st_uid != getuid() ||
-            (profile_info.st_mode & 0777) != 0600 ||
-            profile_info.st_size !=
-                static_cast<off_t>(sizeof(encoded))) {
-            fprintf(stderr,
-                    "Profile metadata invalid: regular=%d uid=%u expected=%u "
-                    "mode=%04o size=%lld expected=%zu.\n",
-                    S_ISREG(profile_info.st_mode) ? 1 : 0,
-                    static_cast<unsigned>(profile_info.st_uid),
-                    static_cast<unsigned>(getuid()),
-                    static_cast<unsigned>(profile_info.st_mode & 0777),
-                    static_cast<long long>(profile_info.st_size),
-                    sizeof(encoded));
-            close(profile_fd);
-            return 1;
-        }
-        ssize_t bytes_read = read(profile_fd, encoded, sizeof(encoded));
-        int read_errno = errno;
-        int close_result = close(profile_fd);
-        if (bytes_read != static_cast<ssize_t>(sizeof(encoded)) ||
-            close_result != 0) {
-            fprintf(stderr,
-                    "Profile read failed: bytes=%ld expected=%zu "
-                    "close=%d errno=%d (%s).\n",
-                    static_cast<long>(bytes_read), sizeof(encoded),
-                    close_result, read_errno, strerror(read_errno));
+                    "Profile read failed: expected a 99-byte mode 0600 file "
+                    "owned by uid %u.\n",
+                    static_cast<unsigned>(getuid()));
             return 1;
         }
         if (!nfcf::DecodeProfileRecordBytes(
