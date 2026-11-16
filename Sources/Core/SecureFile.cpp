@@ -31,6 +31,11 @@ static int OpenReadableFile(const char *path) {
     if (strncmp(path, "/var/mobile/", 12) == 0) {
         char jbroot[PATH_MAX] = {};
         if (realpath("/var/jb", jbroot) != nullptr) {
+            char *jbroot_suffix = strrchr(jbroot, '/');
+            if (jbroot_suffix != nullptr &&
+                strcmp(jbroot_suffix, "/jb") == 0) {
+                *jbroot_suffix = '\0';
+            }
             char rootless_path[PATH_MAX] = {};
             int count = snprintf(rootless_path, sizeof(rootless_path),
                                  "%s%s", jbroot, path);

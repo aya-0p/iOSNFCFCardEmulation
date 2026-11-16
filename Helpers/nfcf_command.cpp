@@ -31,6 +31,10 @@ int main(int argc, char **argv) {
             if (strncmp(nfcf_backend::kProfileRecordPath, "/var/mobile/",
                         12) == 0 &&
                 realpath("/var/jb", jbroot) != nullptr) {
+                char *jbroot_suffix = strrchr(jbroot, '/');
+                if (jbroot_suffix != nullptr &&
+                    strcmp(jbroot_suffix, "/jb") == 0)
+                    *jbroot_suffix = '\0';
                 int count = snprintf(
                     resolved_profile_path, sizeof(resolved_profile_path),
                     "%s%s", jbroot, nfcf_backend::kProfileRecordPath);
