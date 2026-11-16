@@ -9,16 +9,17 @@ TARGET=${TARGET:-"arm64e-apple-ios17.6.1"}
 if [[ "$(uname -s)" == "Darwin" ]]; then
     TOOLCHAIN=${TOOLCHAIN:-"$THEOS/toolchain/darwin/iphone/bin"}
     LDID=${LDID:-ldid}
+    SDK=${SDK:-"$(find "$THEOS/sdks" -maxdepth 1 -type d -name 'iPhoneOS*.sdk' | sort | tail -n 1)"}
     SHA256SUM=${SHA256SUM:-shasum}
     SHA256_ARGS=(-a 256)
 else
     TOOLCHAIN=${TOOLCHAIN:-"$THEOS/toolchain/linux/iphone/bin"}
     LDID=${LDID:-"$THEOS/toolchain/linux/iphone/bin/ldid"}
+    SDK=${SDK:-"$THEOS/sdks/iPhoneOS16.5.sdk"}
     SHA256SUM=${SHA256SUM:-sha256sum}
     SHA256_ARGS=()
 fi
 
-SDK=${SDK:-"$THEOS/sdks/iPhoneOS17.5.sdk"}
 CLANG=${CLANG:-"$TOOLCHAIN/clang++"}
 CLANG_C=${CLANG_C:-"$TOOLCHAIN/clang"}
 
