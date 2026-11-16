@@ -26,7 +26,7 @@ static bool WriteAll(int fd, const void *bytes, size_t length) {
 }
 
 static int OpenReadableFile(const char *path) {
-    int fd = open(path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC);
+    int fd = open(path, O_RDONLY);
     if (fd >= 0 || errno != ENOENT) return fd;
 
     if (strncmp(path, "/var/mobile/", 12) == 0) {
@@ -67,14 +67,14 @@ static int OpenReadableFile(const char *path) {
 
     char resolved[PATH_MAX] = {};
     if (realpath(path, resolved) != nullptr) {
-        fd = open(resolved, O_RDONLY | O_CLOEXEC);
+        fd = open(resolved, O_RDONLY);
         if (fd >= 0 || errno != ENOENT) return fd;
         if (strncmp(resolved, "/rootfs/", 8) != 0) {
             char rootfs_path[PATH_MAX] = {};
             int count = snprintf(rootfs_path, sizeof(rootfs_path),
                                  "/rootfs%s", resolved);
             if (count > 0 && static_cast<size_t>(count) < sizeof(rootfs_path))
-                return open(rootfs_path, O_RDONLY | O_CLOEXEC);
+                return open(rootfs_path, O_RDONLY);
         }
     }
     return -1;
