@@ -44,7 +44,7 @@ jobs:
           THEOS: ${{ runner.temp }}/theos
           TARGET: arm64e-apple-ios17.6.1
         run: |
-          SDK=$(find "$THEOS/sdks" -maxdepth 1 -type d -name 'iPhoneOS*.sdk' | sort | tail -n 1)
+          SDK=$(xcrun --sdk iphoneos --show-sdk-path)
           test -n "$SDK"
           SDK="$SDK" bash scripts/build.sh
       - name: Upload iOS arm64e package
