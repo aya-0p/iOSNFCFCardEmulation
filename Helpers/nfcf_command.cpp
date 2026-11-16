@@ -24,11 +24,11 @@ int main(int argc, char **argv) {
         nfcf::ProfileRecord record = {};
         nfcf::Profile profile = {};
         int profile_fd = open(nfcf_backend::kProfileRecordPath,
-                              O_RDONLY | O_NOFOLLOW | O_CLOEXEC);
+                              O_RDONLY | O_CLOEXEC);
         if (profile_fd < 0) {
             fprintf(stderr,
-                    "Profile open failed: errno=%d (%s).\n", errno,
-                    strerror(errno));
+                    "Profile open failed: path=%s errno=%d (%s).\n",
+                    nfcf_backend::kProfileRecordPath, errno, strerror(errno));
             return 1;
         }
         struct stat profile_info = {};
