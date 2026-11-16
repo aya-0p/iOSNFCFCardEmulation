@@ -172,12 +172,8 @@ find_nfcd_pid() {
         printf '%s\n' "$IOS_NFCF_NFCD_PID"
         return
     fi
-    ps -A 2>/dev/null | while IFS=' ' read -r pid tty cpu command; do
-        if [ "$command" = "/usr/libexec/nfcd" ]; then
-            echo "$pid"
-            break
-        fi
-    done
+    ps -A 2>/dev/null |
+        awk '$1 ~ /^[0-9]+$/ && $NF ~ /(^|\/)nfcd$/ { print $1; exit }'
 }
 
 wait_for_pattern() {
