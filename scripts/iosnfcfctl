@@ -519,6 +519,12 @@ profile_apply() {
             "NFC-Fプロファイルを共有領域へ同期できませんでした" ""
         return 1
     fi
+    if [ ! -f "$PROFILE_RECORD" ]; then
+        echo "Synchronized profile record is not visible after installation." >&2
+        emit_json false profile-apply failed inactive none profile-sync-failed \
+            "同期したNFC-Fプロファイルを確認できませんでした" ""
+        return 1
+    fi
     if ! "$COMMAND_HELPER" validate-profile; then
         emit_json false profile-apply failed inactive none profile-invalid \
             "NFC-Fプロファイルの形式または内容が不正です" ""
